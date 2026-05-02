@@ -1,0 +1,12 @@
+.git
+.air.toml
+*.exe
+*.test
+bin/
+tmp/
+node_modules/
+.env
+uploads/
+coverage/
+*.md
+!README.md
