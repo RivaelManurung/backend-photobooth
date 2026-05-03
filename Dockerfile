@@ -17,14 +17,16 @@ COPY . .
 
 # Build the application
 RUN go build -o main .
+RUN go build -o seeder ./cmd/seed/main.go
 
 # Final stage
 FROM alpine:latest
 
 WORKDIR /app
 
-# Copy the binary from builder
+# Copy the binaries from builder
 COPY --from=builder /app/main .
+COPY --from=builder /app/seeder .
 # Copy .env file if it exists, or use env vars from docker-compose
 COPY .env.example .env
 
