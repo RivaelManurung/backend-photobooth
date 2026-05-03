@@ -27,7 +27,8 @@ WORKDIR /app
 # Copy the binaries from builder
 COPY --from=builder /app/main .
 COPY --from=builder /app/seeder .
-# Copy .env file if it exists, or use env vars from docker-compose
+# Copy documentation and .env
+COPY docs/ ./docs/
 COPY .env.example .env
 
 # Create uploads directory
