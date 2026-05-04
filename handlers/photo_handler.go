@@ -55,7 +55,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 
 	// Create photo record
 	photo := models.Photo{
-		UserID:          user.ID,
+		UserID:          &user.ID,
 		OriginalURL:     url,
 		FileName:        file.Filename,
 		FileSize:        file.Size,
@@ -345,7 +345,7 @@ func (h *PhotoHandler) CreatePhotoStrip(c *gin.Context) {
 
 	// Create photo record for strip
 	stripPhoto := models.Photo{
-		UserID:          user.ID,
+		UserID:          &user.ID,
 		TemplateID:      req.TemplateID,
 		OriginalURL:     stripPath,
 		ProcessedURL:    stripPath,
@@ -437,7 +437,6 @@ func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 		IsPublic:        true,
 		Status:          "completed",
 		Title:           "Photobooth Strip",
-		StorageProvider: "supabase",
 	}
 	db := database.GetDB()
 	if err := db.Create(&photo).Error; err != nil {
