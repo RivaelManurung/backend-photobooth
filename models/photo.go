@@ -98,10 +98,13 @@ func (p *Photo) IncrementDownload(db *gorm.DB) error {
 
 // IsOwnedBy checks if photo belongs to user
 func (p *Photo) IsOwnedBy(userID uint) bool {
-	return p.UserID == userID
+	if p.UserID == nil {
+		return false
+	}
+	return *p.UserID == userID
 }
 
 // CanBeAccessedBy checks if user can access this photo
 func (p *Photo) CanBeAccessedBy(userID uint) bool {
-	return p.IsPublic || p.UserID == userID
+	return p.IsPublic || p.IsOwnedBy(userID)
 }
