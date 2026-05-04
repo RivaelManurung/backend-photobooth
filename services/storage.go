@@ -107,6 +107,39 @@ func (s *StorageService) UploadFile(file *multipart.FileHeader, folder string) (
 	return strings.ReplaceAll(relativeURL, "\\", "/"), nil
 }
 
+// UploadFromBytes uploads raw bytes (e.g. from base64-decoded PNG) to storage
+func (s *StorageService) UploadFromBytes(data []byte, folder, contentType string) (string, error) {
+	ext := ".jpg"
+	if contentType == "image/png" {
+		ext = ".png"
+	}
+	filename := fmt.Sprintf("%s-%s%s", uuid.New().String(), time.Now().Format("20060102"), ext)
+	path := fmt.Sprintf("%s/%s", folder, filename)
+
+	if s.config.Storage.Provider == "supabase" {
+		_, err := s.supabaseClient.UploadFile(s.config.Storage.SupabaseBucket, path, bytes.NewReader(data), storage_go.FileOptions{
+			ContentType: &contentType,
+		})
+		if err != nil {
+			fmt.Printf("❌ Supabase Upload Error (Bucket: %s, Path: %s): %v\n", s.config.Storage.SupabaseBucket, path, err)
+			return "", fmt.Errorf("failed to upload to supabase: %w", err)
+		}
+		return path, nil
+	}
+
+	// Local fallback
+	fullPath := filepath.Join(s.config.Storage.LocalPath, path)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(fullPath, data, 0644); err != nil {
+		return "", err
+	}
+	relativeURL := filepath.Join("/uploads", path)
+	return strings.ReplaceAll(relativeURL, "\\", "/"), nil
+}
+
+
 // DeleteFile deletes a file from storage
 func (s *StorageService) DeleteFile(filePath string) error {
 	if filePath == "" {

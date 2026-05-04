@@ -5,9 +5,11 @@ import (
 	"backendphotobooth/middleware"
 	"backendphotobooth/models"
 	"backendphotobooth/services"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -378,3 +380,52 @@ func (h *PhotoHandler) CreatePhotoStrip(c *gin.Context) {
 		"message": "Photo strip created successfully",
 	})
 }
+
+// UploadPublicStrip accepts a base64-encoded PNG strip from the user (no auth required)
+// POST /api/v1/photos/strip-public
+func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
+	var req struct {
+		ImageBase64 string `json:"image_base64" binding:"required"` // data:image/png;base64,xxxx
+		TemplateID  uint   `json:"template_id"`
+		Filter      string `json:"filter"`
+		SessionID   string `json:"session_id"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image_base64 is required"})
+		return
+	}
+
+	// Strip the data URI prefix
+	raw := req.ImageBase64
+	contentType := "image/png"
+	if idx := strings.Index(raw, ";base64,"); idx != -1 {
+		prefix := raw[:idx]
+		if strings.Contains(prefix, "image/jpeg") {
+			contentType = "image/jpeg"
+		}
+		raw = raw[idx+len(";base64,"):]
+	}
+
+	imgBytes, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 image"})
+		return
+	}
+
+	storagePath, err := h.storageService.UploadFromBytes(imgBytes, "strips", contentType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload strip: " + err.Error()})
+		return
+	}
+
+	// Build public URL immediately
+	publicURL := h.storageService.GetFileURL(storagePath)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"url":     publicURL,
+		"path":    storagePath,
+		"message": "Strip uploaded successfully",
+	})
+}
+

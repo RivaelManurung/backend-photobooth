@@ -98,6 +98,10 @@ func main() {
 		
 		// Public routes
 		auth := v1.Group("/auth")
+
+		// Public strip upload (no auth needed — photobooth anonymous user flow)
+		v1.POST("/photos/strip-public", photoHandler.UploadPublicStrip)
+
 		{
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
