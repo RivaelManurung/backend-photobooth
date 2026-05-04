@@ -138,7 +138,7 @@ func (suite *PhotoTestSuite) TestGetPhotosEmpty() {
 func (suite *PhotoTestSuite) TestGetPhotosWithData() {
 	// Create test photo
 	photo := models.Photo{
-		UserID:     suite.userID,
+		UserID:     &suite.userID,
 		SessionID:  suite.sessionID,
 		TemplateID: suite.templateID,
 		Status:     "completed",
@@ -165,7 +165,7 @@ func (suite *PhotoTestSuite) TestGetPhotosPagination() {
 	// Create multiple photos
 	for i := 0; i < 15; i++ {
 		photo := models.Photo{
-			UserID:     suite.userID,
+			UserID:     &suite.userID,
 			SessionID:  suite.sessionID,
 			TemplateID: suite.templateID,
 			Status:     "completed",
@@ -193,7 +193,7 @@ func (suite *PhotoTestSuite) TestGetPhotosPagination() {
 func (suite *PhotoTestSuite) TestGetSinglePhoto() {
 	// Create test photo
 	photo := models.Photo{
-		UserID:     suite.userID,
+		UserID:     &suite.userID,
 		SessionID:  suite.sessionID,
 		TemplateID: suite.templateID,
 		Status:     "completed",
@@ -223,7 +223,7 @@ func (suite *PhotoTestSuite) TestGetPhotoNotFound() {
 func (suite *PhotoTestSuite) TestDeletePhoto() {
 	// Create test photo
 	photo := models.Photo{
-		UserID:     suite.userID,
+		UserID:     &suite.userID,
 		SessionID:  suite.sessionID,
 		TemplateID: suite.templateID,
 		Status:     "completed",
@@ -256,7 +256,7 @@ func (suite *PhotoTestSuite) TestDeletePhotoUnauthorized() {
 	database.DB.Create(&otherUser)
 
 	photo := models.Photo{
-		UserID:     otherUser.ID,
+		UserID:     &otherUser.ID,
 		SessionID:  suite.sessionID,
 		TemplateID: suite.templateID,
 		Status:     "completed",
