@@ -254,6 +254,9 @@ func (h *TemplateAdminHandler) GetAllTemplates(c *gin.Context) {
 	query := database.DB.Model(&models.Template{})
 
 	// Filters
+	if id := c.Query("id"); id != "" {
+		query = query.Where("id = ?", id)
+	}
 	if category := c.Query("category"); category != "" {
 		query = query.Where("category = ?", category)
 	}
