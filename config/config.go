@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -96,9 +97,7 @@ func LoadConfig() *Config {
 		Server: ServerConfig{
 			Port:         getEnv("PORT", "8080"),
 			Environment:  getEnv("GIN_MODE", "debug"),
-			AllowOrigins: []string{
-				getEnv("FRONTEND_URL", "http://localhost:5173"),
-			},
+			AllowOrigins: strings.Split(getEnv("FRONTEND_URL", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"), ","),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
