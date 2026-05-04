@@ -23,8 +23,12 @@ type StorageService struct {
 func NewStorageService(cfg *config.Config) *StorageService {
 	var supabaseClient *storage_go.Client
 	if cfg.Storage.Provider == "supabase" {
-		// Use Supabase URL directly for storage client
-		supabaseClient = storage_go.NewClient(cfg.Storage.SupabaseURL, cfg.Storage.SupabaseKey, nil)
+		// Ensure URL has /storage/v1 suffix
+		storageURL := cfg.Storage.SupabaseURL
+		if !strings.HasSuffix(storageURL, "/storage/v1") {
+			storageURL = strings.TrimSuffix(storageURL, "/") + "/storage/v1"
+		}
+		supabaseClient = storage_go.NewClient(storageURL, cfg.Storage.SupabaseKey, nil)
 	}
 	return &StorageService{
 		config:         cfg,
