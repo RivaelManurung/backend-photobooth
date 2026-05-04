@@ -40,6 +40,11 @@ func (h *TemplateHandler) GetTemplates(c *gin.Context) {
 		query = query.Where("is_featured = ?", isFeatured == "true")
 	}
 
+	// Filter by photo count (layout)
+	if photoCount := c.Query("photo_count"); photoCount != "" {
+		query = query.Where("photo_count = ?", photoCount)
+	}
+
 	// Check user subscription for access control
 	user, _ := middleware.GetCurrentUser(c)
 	
