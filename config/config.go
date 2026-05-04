@@ -95,9 +95,15 @@ func LoadConfig() *Config {
 
 	return &Config{
 		Server: ServerConfig{
-			Port:         getEnv("PORT", "8080"),
-			Environment:  getEnv("GIN_MODE", "debug"),
-			AllowOrigins: strings.Split(getEnv("FRONTEND_URL", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"), ","),
+			Port:        getEnv("PORT", "8080"),
+			Environment: getEnv("GIN_MODE", "debug"),
+			AllowOrigins: func() []string {
+				origins := strings.Split(getEnv("FRONTEND_URL", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"), ",")
+				for i := range origins {
+					origins[i] = strings.TrimSpace(origins[i])
+				}
+				return origins
+			}(),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),

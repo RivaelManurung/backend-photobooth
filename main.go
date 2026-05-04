@@ -56,19 +56,19 @@ func main() {
 	// Create router
 	router := gin.Default()
 
-	// Middleware
-	router.Use(middleware.LoggerMiddleware())
-	router.Use(middleware.RateLimitMiddleware(100)) // 100 requests per minute
-
-	// CORS configuration
+	// 1. CORS Configuration (MUST BE FIRST)
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.Server.AllowOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With", "X-CSRF-Token"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+
+	// 2. Logging & Rate Limiting
+	router.Use(middleware.LoggerMiddleware())
+	router.Use(middleware.RateLimitMiddleware(200)) // Increased limit for dev
 
 	// Serve static files (uploads)
 	router.Static("/uploads", "./uploads")
