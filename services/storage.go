@@ -68,6 +68,7 @@ func (s *StorageService) UploadFile(file *multipart.FileHeader, folder string) (
 			ContentType: &contentType,
 		})
 		if err != nil {
+			fmt.Printf("❌ Supabase Upload Error (Bucket: %s, Path: %s): %v\n", s.config.Storage.SupabaseBucket, path, err)
 			return "", fmt.Errorf("failed to upload to supabase: %w", err)
 		}
 
