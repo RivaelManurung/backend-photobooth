@@ -385,7 +385,7 @@ func (h *PhotoHandler) CreatePhotoStrip(c *gin.Context) {
 // POST /api/v1/photos/strip-public
 func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 	var req struct {
-		ImageBase64 string `json:"image_base64" binding:"required"` // data:image/png;base64,xxxx
+		ImageBase64 string `json:"image_base64" binding:"required"`
 		TemplateID  uint   `json:"template_id"`
 		Filter      string `json:"filter"`
 		SessionID   string `json:"session_id"`
@@ -396,12 +396,11 @@ func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 		return
 	}
 
-	// Strip the data URI prefix
+	// Strip data URI prefix
 	raw := req.ImageBase64
 	contentType := "image/png"
 	if idx := strings.Index(raw, ";base64,"); idx != -1 {
-		prefix := raw[:idx]
-		if strings.Contains(prefix, "image/jpeg") {
+		if strings.Contains(raw[:idx], "image/jpeg") {
 			contentType = "image/jpeg"
 		}
 		raw = raw[idx+len(";base64,"):]
@@ -413,19 +412,48 @@ func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 		return
 	}
 
+	// Upload to storage
 	storagePath, err := h.storageService.UploadFromBytes(imgBytes, "strips", contentType)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upload strip: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload failed: " + err.Error()})
 		return
 	}
 
-	// Build public URL immediately
-	publicURL := h.storageService.GetFileURL(storagePath)
+	// Get public URL (no expiry)
+	publicURL := h.storageService.GetPublicURL(storagePath)
+
+	// Save record to database (UserID = nil = anonymous)
+	photo := models.Photo{
+		OriginalURL:     publicURL,
+		ProcessedURL:    publicURL,
+		StoragePath:     storagePath,
+		StorageProvider: "supabase",
+		MimeType:        contentType,
+		FileSize:        int64(len(imgBytes)),
+		FilterApplied:   req.Filter,
+		SessionID:       req.SessionID,
+		TemplateID:      req.TemplateID,
+		IsAnonymous:     true,
+		IsPublic:        true,
+		Status:          "completed",
+		Title:           "Photobooth Strip",
+		StorageProvider: "supabase",
+	}
+	db := database.GetDB()
+	if err := db.Create(&photo).Error; err != nil {
+		// Non-fatal: log and continue — file is already on Supabase
+		c.JSON(http.StatusCreated, gin.H{
+			"url":     publicURL,
+			"path":    storagePath,
+			"message": "Strip uploaded (DB record skipped: " + err.Error() + ")",
+		})
+		return
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
+		"id":      photo.ID,
 		"url":     publicURL,
 		"path":    storagePath,
 		"message": "Strip uploaded successfully",
 	})
 }
-

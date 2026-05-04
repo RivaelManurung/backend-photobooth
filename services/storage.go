@@ -177,31 +177,35 @@ func (s *StorageService) isAllowedFileType(mimeType string) bool {
 	return false
 }
 
-// GetFileURL returns the full URL for a file
+// GetPublicURL returns a permanent public URL (no expiry) for Supabase files.
+// Requires the bucket to be set to PUBLIC in Supabase dashboard.
+func (s *StorageService) GetPublicURL(relativePath string) string {
+	if relativePath == "" {
+		return ""
+	}
+	if s.config.Storage.Provider == "supabase" {
+		relativePath = strings.TrimPrefix(relativePath, "/")
+		relativePath = strings.TrimPrefix(relativePath, "uploads/")
+		// Format: https://PROJECT.supabase.co/storage/v1/object/public/BUCKET/PATH
+		return fmt.Sprintf("%s/storage/v1/object/public/%s/%s",
+			s.config.Storage.SupabaseURL,
+			s.config.Storage.SupabaseBucket,
+			relativePath)
+	}
+	return "/uploads/" + relativePath
+}
+
+// GetFileURL returns the URL for a file.
+// For Supabase: returns public URL (permanent, no expiry).
+// Falls back to signed URL if bucket is not public.
 func (s *StorageService) GetFileURL(relativePath string) string {
 	if relativePath == "" {
 		return ""
 	}
-	
+
 	if s.config.Storage.Provider == "supabase" {
-		relativePath = strings.TrimPrefix(relativePath, "/")
-		relativePath = strings.TrimPrefix(relativePath, "uploads/")
-		
-		// Try to create presigned URL valid for 1 hour (3600 seconds)
-		resp, err := s.supabaseClient.CreateSignedUrl(s.config.Storage.SupabaseBucket, relativePath, 3600)
-		if err != nil {
-			// If presigned URL fails, try public URL
-			fmt.Printf("Error creating signed URL for %s: %v, trying public URL\n", relativePath, err)
-			
-			// Return public URL format: https://PROJECT.supabase.co/storage/v1/object/public/BUCKET/PATH
-			publicURL := fmt.Sprintf("%s/storage/v1/object/public/%s/%s", 
-				s.config.Storage.SupabaseURL, 
-				s.config.Storage.SupabaseBucket, 
-				relativePath)
-			return publicURL
-		}
-		
-		return resp.SignedURL
+		// Use public URL — no 1-hour expiry issue
+		return s.GetPublicURL(relativePath)
 	}
 
 	// For local storage, return URL served by backend

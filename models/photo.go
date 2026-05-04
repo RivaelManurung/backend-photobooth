@@ -12,11 +12,12 @@ type Photo struct {
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 	
-	// User & Template
-	UserID      uint           `gorm:"not null;index" json:"user_id"`
-	User        User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	// User & Template (UserID is nullable — anonymous strips have no user)
+	UserID      *uint          `gorm:"index" json:"user_id"`
+	User        *User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	TemplateID  uint           `gorm:"index" json:"template_id"`
 	Template    Template       `gorm:"foreignKey:TemplateID" json:"template,omitempty"`
+	IsAnonymous bool           `gorm:"default:false" json:"is_anonymous"` // true for strip-public uploads
 	
 	// File Information
 	OriginalURL string         `json:"original_url"`
@@ -50,7 +51,7 @@ type Photo struct {
 	SessionID   string         `gorm:"index" json:"session_id"`
 	
 	// Storage
-	StorageProvider string     `json:"storage_provider"` // local, s3
+	StorageProvider string     `json:"storage_provider"` // local, supabase
 	StoragePath     string     `json:"storage_path"`
 	
 	// Watermark

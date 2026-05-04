@@ -113,8 +113,8 @@ func main() {
 		templates.Use(middleware.OptionalAuthMiddleware(cfg))
 		{
 			templates.GET("", templateHandler.GetTemplates)
+			templates.GET("/categories", templateHandler.GetTemplateCategories) // MUST be before /:id
 			templates.GET("/:id", templateHandler.GetTemplate)
-			templates.GET("/categories", templateHandler.GetTemplateCategories)
 			templates.POST("/:id/usage", templateHandler.IncrementTemplateUsage)
 		}
 
