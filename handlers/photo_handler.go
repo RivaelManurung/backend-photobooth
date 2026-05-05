@@ -245,6 +245,10 @@ func (h *PhotoHandler) DownloadPhoto(c *gin.Context) {
 
 	// Check access
 	user, _ := middleware.GetCurrentUser(c)
+	if user == nil && !photo.IsPublic {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
 	if user != nil && !photo.CanBeAccessedBy(user.ID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return

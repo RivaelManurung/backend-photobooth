@@ -93,7 +93,7 @@ func LoadConfig() *Config {
 		log.Println("No .env file found, using environment variables")
 	}
 
-	return &Config{
+	cfg := &Config{
 		Server: ServerConfig{
 			Port:        getEnv("PORT", "8080"),
 			Environment: getEnv("GIN_MODE", "debug"),
@@ -161,6 +161,14 @@ func LoadConfig() *Config {
 			DB:       getEnvAsInt("REDIS_DB", 0),
 		},
 	}
+
+	// Security Check: Ensure JWT secret is changed in production
+	if cfg.Server.Environment == "release" && cfg.JWT.Secret == "your-secret-key-change-in-production" {
+		log.Println("⚠️  WARNING: JWT_SECRET is still using the default value in production!")
+		log.Println("⚠️  Please set a secure JWT_SECRET environment variable.")
+	}
+
+	return cfg
 }
 
 func getEnv(key, defaultValue string) string {
