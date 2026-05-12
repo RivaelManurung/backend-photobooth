@@ -5,6 +5,7 @@ import (
 	"backendphotobooth/middleware"
 	"backendphotobooth/models"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,7 +77,7 @@ func (h *PromoHandler) ValidatePromoCode(c *gin.Context) {
 
 	if discount == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Minimum purchase amount not met",
+			"error":        "Minimum purchase amount not met",
 			"min_purchase": promo.MinPurchase,
 		})
 		return
@@ -126,8 +127,14 @@ func (h *PromoHandler) CreatePromoCode(c *gin.Context) {
 // GetPromoCodes returns all promo codes (admin only)
 func (h *PromoHandler) GetPromoCodes(c *gin.Context) {
 	var promos []models.PromoCode
+	var total int64
 
 	query := database.DB.Model(&models.PromoCode{})
+
+	// Search
+	if q := c.Query("q"); q != "" {
+		query = query.Where("code LIKE ? OR description LIKE ?", "%"+q+"%", "%"+q+"%")
+	}
 
 	// Filter by active status
 	if active := c.Query("active"); active != "" {
@@ -140,14 +147,27 @@ func (h *PromoHandler) GetPromoCodes(c *gin.Context) {
 		query = query.Where("is_active = ? AND starts_at <= ? AND expires_at >= ?", true, now, now)
 	}
 
-	if err := query.Order("created_at DESC").Find(&promos).Error; err != nil {
+	// Count total for pagination
+	query.Count(&total)
+
+	// Pagination
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "15"))
+	offset := (page - 1) * limit
+
+	if err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&promos).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch promo codes"})
 		return
 	}
 
+	totalPages := (total + int64(limit) - 1) / int64(limit)
+
 	c.JSON(http.StatusOK, gin.H{
 		"promo_codes": promos,
-		"total":       len(promos),
+		"total":       total,
+		"page":        page,
+		"limit":       limit,
+		"total_pages": totalPages,
 	})
 }
 

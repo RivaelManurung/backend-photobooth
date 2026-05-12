@@ -5,6 +5,7 @@ import (
 	"backendphotobooth/services"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -111,8 +112,12 @@ func (h *WebSocketHandler) SendMessageToUser(c *gin.Context) {
 		return
 	}
 
-	var uid uint
-	c.ShouldBindUri(&uid)
+	parsedID, err := strconv.ParseUint(userID, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+	uid := uint(parsedID)
 
 	h.hub.BroadcastToUser(uid, req.Event, req.Data)
 

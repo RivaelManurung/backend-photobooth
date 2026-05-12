@@ -7,65 +7,71 @@ import (
 )
 
 type Photo struct {
-	ID          uint           `gorm:"primarykey" json:"id"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
-	
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
 	// User & Template (UserID is nullable — anonymous strips have no user)
-	UserID      *uint          `gorm:"index" json:"user_id"`
-	User        *User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	TemplateID  uint           `gorm:"index" json:"template_id"`
-	Template    Template       `gorm:"foreignKey:TemplateID" json:"template,omitempty"`
-	IsAnonymous bool           `gorm:"default:false" json:"is_anonymous"` // true for strip-public uploads
-	
+	UserID      *uint    `gorm:"index" json:"user_id"`
+	User        *User    `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	TemplateID  uint     `gorm:"index" json:"template_id"`
+	Template    Template `gorm:"foreignKey:TemplateID" json:"template,omitempty"`
+	IsAnonymous bool     `gorm:"default:false" json:"is_anonymous"` // true for strip-public uploads
+
 	// File Information
-	OriginalURL string         `json:"original_url"`
-	ProcessedURL string        `json:"processed_url"`
-	ThumbnailURL string        `json:"thumbnail_url"`
-	FileName    string         `json:"file_name"`
-	FileSize    int64          `json:"file_size"`
-	MimeType    string         `json:"mime_type"`
-	Width       int            `json:"width"`
-	Height      int            `json:"height"`
-	
+	OriginalURL  string `json:"original_url"`
+	ProcessedURL string `json:"processed_url"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	FileName     string `json:"file_name"`
+	FileSize     int64  `json:"file_size"`
+	MimeType     string `json:"mime_type"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+
 	// Processing
-	Status      string         `gorm:"default:'processing'" json:"status"` // processing, completed, failed
-	ProcessingError string     `json:"processing_error,omitempty"`
-	
+	Status             string     `gorm:"default:'processing'" json:"status"`               // processing, completed, failed
+	ProcessingStatus   string     `gorm:"default:'pending';index" json:"processing_status"` // pending, processing, completed, failed
+	ProcessingError    string     `json:"processing_error,omitempty"`
+	OriginalObjectKey  string     `json:"original_object_key"`
+	ProcessedObjectKey string     `json:"processed_object_key"`
+	ThumbnailObjectKey string     `json:"thumbnail_object_key"`
+	RetryCount         int        `gorm:"default:0" json:"retry_count"`
+	ProcessedAt        *time.Time `json:"processed_at"`
+
 	// Customization Applied
-	FilterApplied string       `json:"filter_applied"` // none, bw, sepia, vivid, etc
-	CustomData    string       `gorm:"type:jsonb" json:"custom_data"` // JSON for custom settings
-	
+	FilterApplied string `json:"filter_applied"`                // none, bw, sepia, vivid, etc
+	CustomData    string `gorm:"type:jsonb" json:"custom_data"` // JSON for custom settings
+
 	// Metadata
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	Tags        string         `json:"tags"`
-	IsPublic    bool           `gorm:"default:false" json:"is_public"`
-	IsFavorite  bool           `gorm:"default:false" json:"is_favorite"`
-	ViewCount   int            `gorm:"default:0" json:"view_count"`
-	DownloadCount int          `gorm:"default:0" json:"download_count"`
-	
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	Tags          string `json:"tags"`
+	IsPublic      bool   `gorm:"default:false" json:"is_public"`
+	IsFavorite    bool   `gorm:"default:false" json:"is_favorite"`
+	ViewCount     int    `gorm:"default:0" json:"view_count"`
+	DownloadCount int    `gorm:"default:0" json:"download_count"`
+
 	// Event/Session
-	EventName   string         `json:"event_name"`
-	SessionID   string         `gorm:"index" json:"session_id"`
-	
+	EventName string `json:"event_name"`
+	SessionID string `gorm:"index" json:"session_id"`
+
 	// Storage
-	StorageProvider string     `json:"storage_provider"` // local, supabase
-	StoragePath     string     `json:"storage_path"`
-	
+	StorageProvider string `json:"storage_provider"` // local, supabase
+	StoragePath     string `json:"storage_path"`
+
 	// Watermark
-	HasWatermark bool          `gorm:"default:false" json:"has_watermark"`
+	HasWatermark bool `gorm:"default:false" json:"has_watermark"`
 }
 
 // CustomPhotoData represents custom settings for a photo
 type CustomPhotoData struct {
-	LayoutCount     int                    `json:"layout_count"`
-	SelectedTemplate string                `json:"selected_template"`
-	Filter          string                 `json:"filter"`
-	TextOverlays    []TextOverlay          `json:"text_overlays"`
-	Stickers        []Sticker              `json:"stickers"`
-	Adjustments     map[string]interface{} `json:"adjustments"`
+	LayoutCount      int                    `json:"layout_count"`
+	SelectedTemplate string                 `json:"selected_template"`
+	Filter           string                 `json:"filter"`
+	TextOverlays     []TextOverlay          `json:"text_overlays"`
+	Stickers         []Sticker              `json:"stickers"`
+	Adjustments      map[string]interface{} `json:"adjustments"`
 }
 
 type TextOverlay struct {

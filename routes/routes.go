@@ -15,7 +15,7 @@ import (
 )
 
 // SetupRouter initializes and returns the gin router with all routes configured
-func SetupRouter(cfg *config.Config, 
+func SetupRouter(cfg *config.Config,
 	authHandler *handlers.AuthHandler,
 	templateHandler *handlers.TemplateHandler,
 	templateAdminHandler *handlers.TemplateAdminHandler,
@@ -26,8 +26,12 @@ func SetupRouter(cfg *config.Config,
 	sessionHandler *handlers.SessionHandler,
 	searchHandler *handlers.SearchHandler,
 	promoHandler *handlers.PromoHandler,
+	twoFAHandler *handlers.TwoFAHandler,
+	auditHandler *handlers.AuditHandler,
 	docsHandler *handlers.DocsHandler,
+	wsHandler *handlers.WebSocketHandler,
 	wsHub *services.Hub) *gin.Engine {
+	_ = wsHub
 
 	// Create router
 	router := gin.New()
@@ -35,6 +39,7 @@ func SetupRouter(cfg *config.Config,
 	// 1. Global Recovery & Error Handling
 	router.Use(middleware.RecoveryMiddleware())
 	router.Use(middleware.ErrorHandlerMiddleware())
+	router.Use(middleware.RequestIDMiddleware())
 
 	// 2. Security Headers Middleware
 	router.Use(middleware.SecurityMiddleware())
@@ -74,6 +79,28 @@ func SetupRouter(cfg *config.Config,
 		})
 	})
 
+	router.GET("/ready", func(c *gin.Context) {
+		dbStatus := "connected"
+		sqlDB, err := database.DB.DB()
+		if err != nil || sqlDB.Ping() != nil {
+			dbStatus = "disconnected"
+		}
+		status := http.StatusOK
+		if dbStatus != "connected" {
+			status = http.StatusServiceUnavailable
+		}
+		c.JSON(status, gin.H{
+			"status":    map[bool]string{true: "ready", false: "not_ready"}[status == http.StatusOK],
+			"database":  dbStatus,
+			"timestamp": time.Now(),
+		})
+	})
+
+	router.GET("/metrics", func(c *gin.Context) {
+		c.Header("Content-Type", "text/plain; version=0.0.4")
+		c.String(http.StatusOK, "# HELP photobooth_up Application health\n# TYPE photobooth_up gauge\nphotobooth_up 1\n")
+	})
+
 	// Documentation
 	router.GET("/docs", docsHandler.GetSwaggerUI)
 	router.GET("/swagger", docsHandler.GetSwaggerUI)
@@ -85,7 +112,7 @@ func SetupRouter(cfg *config.Config,
 		// Documentation endpoints
 		v1.GET("/docs", docsHandler.GetSwaggerUI)
 		v1.GET("/docs/swagger.json", docsHandler.GetSwaggerJSON)
-		
+
 		// Public routes
 		auth := v1.Group("/auth")
 		{
@@ -178,6 +205,18 @@ func SetupRouter(cfg *config.Config,
 			{
 				promo.POST("/validate", promoHandler.ValidatePromoCode)
 			}
+
+			protected.GET("/search/photos", searchHandler.SearchPhotos)
+
+			twoFA := protected.Group("/2fa")
+			{
+				twoFA.POST("/setup", twoFAHandler.SetupTwoFA)
+				twoFA.POST("/verify-enable", twoFAHandler.VerifyAndEnableTwoFA)
+				twoFA.POST("/disable", twoFAHandler.DisableTwoFA)
+				twoFA.POST("/verify", twoFAHandler.VerifyTwoFA)
+				twoFA.GET("/status", twoFAHandler.GetTwoFAStatus)
+				twoFA.POST("/backup-codes/regenerate", twoFAHandler.RegenerateBackupCodes)
+			}
 		}
 
 		// Admin routes
@@ -191,16 +230,26 @@ func SetupRouter(cfg *config.Config,
 			adminUsers := admin.Group("/users")
 			{
 				adminUsers.GET("", adminHandler.GetAllUsers)
+				adminUsers.GET("/export", adminHandler.ExportUsers)
 				adminUsers.GET("/:id", adminHandler.GetUser)
 				adminUsers.PUT("/:id/status", adminHandler.UpdateUserStatus)
 				adminUsers.DELETE("/:id", adminHandler.DeleteUser)
 			}
+
+			// Analytics & Reports
+			admin.GET("/reports/revenue", adminHandler.GetRevenueReport)
+			admin.GET("/analytics/growth", adminHandler.GetUserGrowth)
+			admin.GET("/analytics/templates", adminHandler.GetTemplateAnalytics)
 
 			adminTemplates := admin.Group("/templates")
 			{
 				adminTemplates.GET("", templateAdminHandler.GetAllTemplates)
 				adminTemplates.POST("", templateAdminHandler.CreateTemplate)
 				adminTemplates.PUT("/:id", templateAdminHandler.UpdateTemplate)
+				adminTemplates.PATCH("/:id/status", templateAdminHandler.ToggleTemplateStatus)
+				adminTemplates.PATCH("/:id/featured", templateAdminHandler.ToggleTemplateFeatured)
+				adminTemplates.POST("/:id/duplicate", templateAdminHandler.DuplicateTemplate)
+				adminTemplates.GET("/analytics", templateAdminHandler.GetTemplateAnalytics)
 				adminTemplates.DELETE("/:id", templateAdminHandler.DeleteTemplate)
 			}
 
@@ -208,7 +257,26 @@ func SetupRouter(cfg *config.Config,
 			{
 				adminPromo.POST("", promoHandler.CreatePromoCode)
 				adminPromo.GET("", promoHandler.GetPromoCodes)
+				adminPromo.GET("/:id", promoHandler.GetPromoCode)
+				adminPromo.PUT("/:id", promoHandler.UpdatePromoCode)
+				adminPromo.DELETE("/:id", promoHandler.DeletePromoCode)
+				adminPromo.GET("/:id/usage", promoHandler.GetPromoUsageHistory)
+				adminPromo.POST("/:id/toggle", promoHandler.TogglePromoStatus)
 			}
+
+			adminAudit := admin.Group("/audit")
+			{
+				adminAudit.GET("/logs", auditHandler.GetAuditLogs)
+				adminAudit.GET("/users/:user_id", auditHandler.GetUserAuditTrail)
+				adminAudit.GET("/resources/:resource_type/:resource_id", auditHandler.GetResourceAuditTrail)
+				adminAudit.GET("/stats", auditHandler.GetAuditStats)
+				adminAudit.GET("/export", auditHandler.ExportAuditLogs)
+			}
+
+			admin.GET("/search/users", searchHandler.SearchUsers)
+			admin.GET("/ws/clients", wsHandler.GetConnectedClients)
+			admin.POST("/ws/broadcast", wsHandler.BroadcastMessage)
+			admin.POST("/ws/users/:user_id", wsHandler.SendMessageToUser)
 		}
 
 		// Webhooks
@@ -220,9 +288,7 @@ func SetupRouter(cfg *config.Config,
 		}
 
 		// WebSocket
-		v1.GET("/ws", func(c *gin.Context) {
-			services.ServeWs(wsHub, c.Writer, c.Request)
-		})
+		v1.GET("/ws", wsHandler.HandleWebSocket)
 	}
 
 	// 404 handler

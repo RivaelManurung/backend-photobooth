@@ -4,8 +4,12 @@ import (
 	"backendphotobooth/config"
 	"bytes"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	storage_go "github.com/supabase-community/storage-go"
+	_ "golang.org/x/image/webp"
 )
 
 type StorageService struct {
@@ -43,32 +48,28 @@ func (s *StorageService) UploadFile(file *multipart.FileHeader, folder string) (
 		return "", fmt.Errorf("file size exceeds maximum allowed size")
 	}
 
-	// Validate file type
-	if !s.isAllowedFileType(file.Header.Get("Content-Type")) {
-		return "", fmt.Errorf("file type not allowed")
+	src, err := file.Open()
+	if err != nil {
+		return "", fmt.Errorf("failed to open uploaded file: %w", err)
+	}
+	defer src.Close()
+
+	buf := bytes.NewBuffer(nil)
+	if _, err := io.Copy(buf, src); err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+	data := buf.Bytes()
+	contentType, ext, err := s.validateImageBytes(data)
+	if err != nil {
+		return "", err
 	}
 
-	// Generate unique filename
-	ext := filepath.Ext(file.Filename)
+	// Generate unique filename. Do not trust the client-provided filename.
 	filename := fmt.Sprintf("%s-%s%s", uuid.New().String(), time.Now().Format("20060102"), ext)
 
-	if s.config.Storage.Provider == "supabase" {
-		src, err := file.Open()
-		if err != nil {
-			return "", fmt.Errorf("failed to open uploaded file: %w", err)
-		}
-		defer src.Close()
-
-		buf := bytes.NewBuffer(nil)
-		if _, err := io.Copy(buf, src); err != nil {
-			return "", fmt.Errorf("failed to read file: %w", err)
-		}
-
-		// Path in Supabase bucket (without leading slash)
+	if s.config.Storage.Provider == "supabase" || s.config.Storage.Driver == "supabase" {
 		path := fmt.Sprintf("%s/%s", folder, filename)
-		contentType := file.Header.Get("Content-Type")
-		
-		_, err = s.supabaseClient.UploadFile(s.config.Storage.SupabaseBucket, path, bytes.NewReader(buf.Bytes()), storage_go.FileOptions{
+		_, err = s.supabaseClient.UploadFile(s.config.Storage.SupabaseBucket, path, bytes.NewReader(data), storage_go.FileOptions{
 			ContentType: &contentType,
 		})
 		if err != nil {
@@ -87,19 +88,7 @@ func (s *StorageService) UploadFile(file *multipart.FileHeader, folder string) (
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	src, err := file.Open()
-	if err != nil {
-		return "", fmt.Errorf("failed to open uploaded file: %w", err)
-	}
-	defer src.Close()
-
-	dst, err := os.Create(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, src); err != nil {
+	if err := os.WriteFile(fullPath, data, 0644); err != nil {
 		return "", fmt.Errorf("failed to save file: %w", err)
 	}
 
@@ -139,19 +128,18 @@ func (s *StorageService) UploadFromBytes(data []byte, folder, contentType string
 	return strings.ReplaceAll(relativeURL, "\\", "/"), nil
 }
 
-
 // DeleteFile deletes a file from storage
 func (s *StorageService) DeleteFile(filePath string) error {
 	if filePath == "" {
 		return nil
 	}
-	
+
 	filePath = strings.TrimPrefix(filePath, "/")
 
 	if s.config.Storage.Provider == "supabase" {
 		// Remove uploads/ prefix if present
 		filePath = strings.TrimPrefix(filePath, "uploads/")
-		
+
 		_, err := s.supabaseClient.RemoveFile(s.config.Storage.SupabaseBucket, []string{filePath})
 		if err != nil {
 			return fmt.Errorf("failed to delete from supabase: %w", err)
@@ -175,6 +163,45 @@ func (s *StorageService) isAllowedFileType(mimeType string) bool {
 		}
 	}
 	return false
+}
+
+func (s *StorageService) validateImageBytes(data []byte) (string, string, error) {
+	if len(data) == 0 {
+		return "", "", fmt.Errorf("empty file")
+	}
+	if int64(len(data)) > s.config.Storage.MaxUploadSize {
+		return "", "", fmt.Errorf("file size exceeds maximum allowed size")
+	}
+
+	contentType := http.DetectContentType(data)
+	if contentType == "image/jpg" {
+		contentType = "image/jpeg"
+	}
+	if !s.isAllowedFileType(contentType) {
+		return "", "", fmt.Errorf("file type not allowed")
+	}
+
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", "", fmt.Errorf("invalid image file")
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return "", "", fmt.Errorf("invalid image dimensions")
+	}
+	if cfg.Width > s.config.Storage.MaxImageWidth || cfg.Height > s.config.Storage.MaxImageHeight {
+		return "", "", fmt.Errorf("image dimensions exceed maximum allowed size")
+	}
+
+	switch contentType {
+	case "image/jpeg":
+		return contentType, ".jpg", nil
+	case "image/png":
+		return contentType, ".png", nil
+	case "image/webp":
+		return contentType, ".webp", nil
+	default:
+		return "", "", fmt.Errorf("file type not allowed")
+	}
 }
 
 // GetPublicURL returns a permanent public URL (no expiry) for Supabase files.
@@ -217,7 +244,7 @@ func (s *StorageService) GetFileURL(relativePath string) string {
 			relativePath = "/uploads/" + relativePath
 		}
 	}
-	
+
 	// Return full URL with backend host
 	// In production, use actual domain. For now, use relative path
 	return relativePath

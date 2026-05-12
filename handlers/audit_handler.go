@@ -82,7 +82,10 @@ func (h *AuditHandler) GetUserAuditTrail(c *gin.Context) {
 
 // GetResourceAuditTrail returns audit trail for specific resource (admin only)
 func (h *AuditHandler) GetResourceAuditTrail(c *gin.Context) {
-	resource := c.Param("resource")
+	resource := c.Param("resource_type")
+	if resource == "" {
+		resource = c.Param("resource")
+	}
 	resourceID := c.Param("resource_id")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 
@@ -103,12 +106,12 @@ func (h *AuditHandler) GetResourceAuditTrail(c *gin.Context) {
 // GetAuditStats returns audit statistics (admin only)
 func (h *AuditHandler) GetAuditStats(c *gin.Context) {
 	var stats struct {
-		TotalLogs       int64                  `json:"total_logs"`
-		TodayLogs       int64                  `json:"today_logs"`
-		FailedActions   int64                  `json:"failed_actions"`
-		TopActions      []map[string]interface{} `json:"top_actions"`
-		TopResources    []map[string]interface{} `json:"top_resources"`
-		TopUsers        []map[string]interface{} `json:"top_users"`
+		TotalLogs     int64                    `json:"total_logs"`
+		TodayLogs     int64                    `json:"today_logs"`
+		FailedActions int64                    `json:"failed_actions"`
+		TopActions    []map[string]interface{} `json:"top_actions"`
+		TopResources  []map[string]interface{} `json:"top_resources"`
+		TopUsers      []map[string]interface{} `json:"top_users"`
 	}
 
 	// Total logs

@@ -16,26 +16,34 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN go build -o main .
-RUN go build -o seeder ./cmd/seed/main.go
+RUN go build -trimpath -ldflags="-s -w" -o main .
+RUN go build -trimpath -ldflags="-s -w" -o worker ./cmd/worker
+RUN go build -trimpath -ldflags="-s -w" -o seeder ./cmd/seed/main.go
 
 # Final stage
 FROM alpine:latest
 
 WORKDIR /app
 
+RUN apk add --no-cache ca-certificates tzdata wget && \
+    addgroup -S photobooth && \
+    adduser -S photobooth -G photobooth
+
 # Copy the binaries from builder
 COPY --from=builder /app/main .
+COPY --from=builder /app/worker .
 COPY --from=builder /app/seeder .
 # Copy documentation and .env
 COPY docs/ ./docs/
 COPY .env.example .env
 
 # Create uploads directory
-RUN mkdir -p uploads
+RUN mkdir -p uploads && chown -R photobooth:photobooth /app
+
+USER photobooth
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8082
 
 # Command to run
 CMD ["./main"]

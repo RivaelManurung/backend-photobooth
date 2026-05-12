@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"log"
 	"net/smtp"
+	"strings"
 )
 
 type EmailService struct {
@@ -81,7 +83,7 @@ func (s *EmailService) SendOrderConfirmation(user *models.User, order *models.Or
 		<p>You can view your order details in your account dashboard.</p>
 		<br>
 		<p>Best regards,<br>Photo Booth Team</p>
-	`, user.Name, order.OrderNumber, order.SubscriptionPlan, 
+	`, user.Name, order.OrderNumber, order.SubscriptionPlan,
 		formatCurrency(order.TotalAmount), order.Status)
 
 	return s.sendEmail(user.Email, subject, body)
@@ -120,6 +122,17 @@ func (s *EmailService) SendPhotoReadyNotification(user *models.User, photo *mode
 
 // sendEmail sends email using SMTP
 func (s *EmailService) sendEmail(to, subject, body string) error {
+	switch strings.ToLower(s.config.Email.Driver) {
+	case "", "disabled":
+		return nil
+	case "log":
+		log.Printf("[email:log] to=%s subject=%q body=%s", to, subject, body)
+		return nil
+	case "smtp":
+	default:
+		return fmt.Errorf("unsupported email driver %q", s.config.Email.Driver)
+	}
+
 	// Setup authentication
 	auth := smtp.PlainAuth(
 		"",
@@ -174,7 +187,7 @@ type EmailTemplate struct {
 // LoadEmailTemplates loads email templates from files
 func (s *EmailService) LoadEmailTemplates() map[string]*EmailTemplate {
 	templates := make(map[string]*EmailTemplate)
-	
+
 	// Welcome email template
 	welcomeTemplate := template.Must(template.New("welcome").Parse(`
 		<!DOCTYPE html>
@@ -203,12 +216,12 @@ func (s *EmailService) LoadEmailTemplates() map[string]*EmailTemplate {
 		</body>
 		</html>
 	`))
-	
+
 	templates["welcome"] = &EmailTemplate{
 		Subject: "Welcome to Photo Booth!",
 		Body:    welcomeTemplate,
 	}
-	
+
 	return templates
 }
 
@@ -219,11 +232,11 @@ func (s *EmailService) SendTemplatedEmail(to, templateName string, data interfac
 	if !exists {
 		return fmt.Errorf("template %s not found", templateName)
 	}
-	
+
 	var body bytes.Buffer
 	if err := tmpl.Body.Execute(&body, data); err != nil {
 		return err
 	}
-	
+
 	return s.sendEmail(to, tmpl.Subject, body.String())
 }

@@ -17,6 +17,7 @@ import (
 type PhotoHandler struct {
 	storageService *services.StorageService
 	imageProcessor *services.ImageProcessor
+	queueService   *services.QueueService
 }
 
 func NewPhotoHandler(storage *services.StorageService, processor *services.ImageProcessor) *PhotoHandler {
@@ -24,6 +25,10 @@ func NewPhotoHandler(storage *services.StorageService, processor *services.Image
 		storageService: storage,
 		imageProcessor: processor,
 	}
+}
+
+func (h *PhotoHandler) SetQueueService(queue *services.QueueService) {
+	h.queueService = queue
 }
 
 // UploadPhoto handles photo upload
@@ -55,17 +60,19 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 
 	// Create photo record
 	photo := models.Photo{
-		UserID:          &user.ID,
-		OriginalURL:     url,
-		FileName:        file.Filename,
-		FileSize:        file.Size,
-		MimeType:        file.Header.Get("Content-Type"),
-		Status:          "processing",
-		FilterApplied:   filter,
-		SessionID:       sessionID,
-		StorageProvider: "local",
-		StoragePath:     url,
-		HasWatermark:    user.SubscriptionPlan == "free",
+		UserID:            &user.ID,
+		OriginalURL:       url,
+		FileName:          file.Filename,
+		FileSize:          file.Size,
+		MimeType:          file.Header.Get("Content-Type"),
+		Status:            "processing",
+		ProcessingStatus:  "pending",
+		OriginalObjectKey: strings.TrimPrefix(url, "/uploads/"),
+		FilterApplied:     filter,
+		SessionID:         sessionID,
+		StorageProvider:   "local",
+		StoragePath:       url,
+		HasWatermark:      user.SubscriptionPlan == "free",
 	}
 
 	// Parse template ID
@@ -84,22 +91,33 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		return
 	}
 
-	// Process photo asynchronously
-	go func() {
-		var template models.Template
-		if photo.TemplateID > 0 {
-			database.DB.First(&template, photo.TemplateID)
-		}
-
-		if err := h.imageProcessor.ProcessPhoto(&photo, &template, filter); err != nil {
+	if h.queueService != nil {
+		if err := h.queueService.EnqueuePhotoProcess(c.Request.Context(), photo.ID); err != nil {
+			photo.ProcessingStatus = "failed"
+			photo.ProcessingError = "failed to enqueue processing job"
 			photo.Status = "failed"
-			photo.ProcessingError = err.Error()
-		} else {
-			photo.Status = "completed"
+			database.DB.Save(&photo)
 		}
+	} else {
+		// Local fallback keeps the existing single-process behavior when Redis is unavailable.
+		go func() {
+			var template models.Template
+			if photo.TemplateID > 0 {
+				database.DB.First(&template, photo.TemplateID)
+			}
 
-		database.DB.Save(&photo)
-	}()
+			if err := h.imageProcessor.ProcessPhoto(&photo, &template, filter); err != nil {
+				photo.Status = "failed"
+				photo.ProcessingStatus = "failed"
+				photo.ProcessingError = err.Error()
+			} else {
+				photo.Status = "completed"
+				photo.ProcessingStatus = "completed"
+			}
+
+			database.DB.Save(&photo)
+		}()
+	}
 
 	// Convert URLs to presigned URLs for response
 	photo.OriginalURL = h.storageService.GetFileURL(photo.OriginalURL)

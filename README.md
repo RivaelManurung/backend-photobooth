@@ -195,102 +195,102 @@ Setelah seeding, gunakan credentials berikut untuk login:
 
 ### Authentication
 ```
-POST   /api/auth/register          - Register user baru
-POST   /api/auth/login             - Login user
-POST   /api/auth/refresh           - Refresh JWT token
-GET    /api/auth/me                - Get current user info
-PUT    /api/auth/profile           - Update profile
-PUT    /api/auth/password          - Change password
+POST   /api/v1/auth/register          - Register user baru
+POST   /api/v1/auth/login             - Login user
+POST   /api/v1/auth/refresh           - Refresh JWT token
+GET    /api/v1/auth/me                - Get current user info
+PUT    /api/v1/auth/profile           - Update profile
+PUT    /api/v1/auth/password          - Change password
 ```
 
 ### Templates
 ```
-GET    /api/templates              - List semua templates
-GET    /api/templates/:id          - Get template detail
-POST   /api/templates              - Create template (admin)
-PUT    /api/templates/:id          - Update template (admin)
-DELETE /api/templates/:id          - Delete template (admin)
-GET    /api/templates/featured     - Get featured templates
+GET    /api/v1/templates              - List semua templates
+GET    /api/v1/templates/:id          - Get template detail
+POST   /api/v1/templates              - Create template (admin)
+PUT    /api/v1/templates/:id          - Update template (admin)
+DELETE /api/v1/templates/:id          - Delete template (admin)
+GET    /api/v1/templates/featured     - Get featured templates
 ```
 
 ### Photos
 ```
-GET    /api/photos                 - List user photos
-GET    /api/photos/:id             - Get photo detail
-POST   /api/photos                 - Upload photo
-PUT    /api/photos/:id             - Update photo
-DELETE /api/photos/:id             - Delete photo
-GET    /api/photos/:id/download    - Download photo
+GET    /api/v1/photos                 - List user photos
+GET    /api/v1/photos/:id             - Get photo detail
+POST   /api/v1/photos                 - Upload photo
+PUT    /api/v1/photos/:id             - Update photo
+DELETE /api/v1/photos/:id             - Delete photo
+GET    /api/v1/photos/:id/download    - Download photo
 ```
 
 ### Sessions
 ```
-GET    /api/sessions               - List sessions
-GET    /api/sessions/:id           - Get session detail
-POST   /api/sessions               - Create session
-PUT    /api/sessions/:id           - Update session
-DELETE /api/sessions/:id           - Delete session
-POST   /api/sessions/:id/complete  - Complete session
+GET    /api/v1/sessions               - List sessions
+GET    /api/v1/sessions/:id           - Get session detail
+POST   /api/v1/sessions               - Create session
+PUT    /api/v1/sessions/:id           - Update session
+DELETE /api/v1/sessions/:id           - Delete session
+POST   /api/v1/sessions/:id/complete  - Complete session
 ```
 
 ### Orders & Payments
 ```
-GET    /api/orders                 - List orders
-GET    /api/orders/:id             - Get order detail
-POST   /api/orders                 - Create order
-PUT    /api/orders/:id             - Update order
-POST   /api/orders/:id/cancel      - Cancel order
+GET    /api/v1/orders                 - List orders
+GET    /api/v1/orders/:id             - Get order detail
+POST   /api/v1/orders                 - Create order
+PUT    /api/v1/orders/:id             - Update order
+POST   /api/v1/orders/:id/cancel      - Cancel order
 ```
 
 ### GoPay QRIS Payment
 ```
-POST   /api/gopay/qris/create      - Create QRIS payment
-GET    /api/gopay/qris/:id         - Get QRIS payment detail
-GET    /api/gopay/qris/:id/status  - Check payment status
-POST   /api/gopay/qris/:id/cancel  - Cancel payment
-POST   /api/gopay/webhook          - Webhook callback (dari GoPay)
+POST   /api/v1/gopay/qris/create      - Create QRIS payment
+GET    /api/v1/gopay/qris/:id         - Get QRIS payment detail
+GET    /api/v1/gopay/qris/:id/status  - Check payment status
+POST   /api/v1/gopay/qris/:id/cancel  - Cancel payment
+POST   /api/v1/gopay/webhook          - Webhook callback (dari GoPay)
 ```
 
 ### Promo Codes
 ```
-GET    /api/promo-codes/validate   - Validate promo code
-POST   /api/promo-codes/apply      - Apply promo code
+GET    /api/v1/promo-codes/validate   - Validate promo code
+POST   /api/v1/promo-codes/apply      - Apply promo code
 
 # Admin only
-GET    /api/admin/promo-codes      - List all promo codes
-POST   /api/admin/promo-codes      - Create promo code
-PUT    /api/admin/promo-codes/:id  - Update promo code
-DELETE /api/admin/promo-codes/:id  - Delete promo code
+GET    /api/v1/admin/promo-codes      - List all promo codes
+POST   /api/v1/admin/promo-codes      - Create promo code
+PUT    /api/v1/admin/promo-codes/:id  - Update promo code
+DELETE /api/v1/admin/promo-codes/:id  - Delete promo code
 ```
 
 ### Two-Factor Authentication
 ```
-POST   /api/2fa/setup              - Setup 2FA
-POST   /api/2fa/verify             - Verify 2FA code
-POST   /api/2fa/disable            - Disable 2FA
-GET    /api/2fa/backup-codes       - Get backup codes
-POST   /api/2fa/regenerate-backup  - Regenerate backup codes
+POST   /api/v1/2fa/setup              - Setup 2FA
+POST   /api/v1/2fa/verify             - Verify 2FA code
+POST   /api/v1/2fa/disable            - Disable 2FA
+GET    /api/v1/2fa/backup-codes       - Get backup codes
+POST   /api/v1/2fa/regenerate-backup  - Regenerate backup codes
 ```
 
 ### Admin - Analytics
 ```
-GET    /api/admin/analytics/overview    - Dashboard overview
-GET    /api/admin/analytics/daily       - Daily statistics
-GET    /api/admin/analytics/users       - User analytics
-GET    /api/admin/analytics/revenue     - Revenue analytics
+GET    /api/v1/admin/analytics/overview    - Dashboard overview
+GET    /api/v1/admin/analytics/daily       - Daily statistics
+GET    /api/v1/admin/analytics/users       - User analytics
+GET    /api/v1/admin/analytics/revenue     - Revenue analytics
 ```
 
 ### Admin - Audit Logs
 ```
-GET    /api/admin/audit-logs            - List audit logs
-GET    /api/admin/audit-logs/:id        - Get audit log detail
+GET    /api/v1/admin/audit-logs            - List audit logs
+GET    /api/v1/admin/audit-logs/:id        - Get audit log detail
 ```
 
 ### Search
 ```
-GET    /api/search/templates       - Search templates
-GET    /api/search/photos          - Search photos
-GET    /api/search/users           - Search users (admin)
+GET    /api/v1/search/templates       - Search templates
+GET    /api/v1/search/photos          - Search photos
+GET    /api/v1/search/users           - Search users (admin)
 ```
 
 ### WebSocket
@@ -304,7 +304,7 @@ WS     /ws                         - WebSocket connection untuk real-time notifi
 
 1. **Create QRIS Payment**
    ```bash
-   POST /api/gopay/qris/create
+   POST /api/v1/gopay/qris/create
    {
      "order_id": 1,
      "amount": 50000,
@@ -330,12 +330,12 @@ WS     /ws                         - WebSocket connection untuk real-time notifi
 
 4. **Check Payment Status**
    ```bash
-   GET /api/gopay/qris/:id/status
+   GET /api/v1/gopay/qris/:id/status
    ```
 
 5. **Webhook Notification** - GoPay akan kirim notifikasi ke webhook endpoint
    ```bash
-   POST /api/gopay/webhook
+   POST /api/v1/gopay/webhook
    ```
 
 6. **WebSocket Notification** - Frontend akan menerima real-time notification via WebSocket

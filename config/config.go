@@ -36,42 +36,56 @@ type DatabaseConfig struct {
 }
 
 type JWTConfig struct {
-	Secret           string
-	AccessExpiration time.Duration
+	Secret            string
+	AccessExpiration  time.Duration
 	RefreshExpiration time.Duration
 }
 
 type StorageConfig struct {
-	Provider        string // "local", "s3", or "supabase"
-	LocalPath       string
-	S3Bucket        string
-	S3Region        string
-	S3AccessKey     string
-	S3SecretKey     string
-	SupabaseURL     string
-	SupabaseKey     string
-	SupabaseBucket  string
-	MaxUploadSize   int64
-	AllowedFormats  []string
+	Provider       string // legacy: "local", "s3", or "supabase"
+	Driver         string // "local", "minio", or "r2"
+	LocalPath      string
+	Bucket         string
+	Endpoint       string
+	Region         string
+	AccessKey      string
+	SecretKey      string
+	PublicBaseURL  string
+	ForcePathStyle bool
+	S3Bucket       string
+	S3Region       string
+	S3AccessKey    string
+	S3SecretKey    string
+	SupabaseURL    string
+	SupabaseKey    string
+	SupabaseBucket string
+	MaxUploadSize  int64
+	MaxImageWidth  int
+	MaxImageHeight int
+	AllowedFormats []string
 }
 
 type PaymentConfig struct {
-	StripeSecretKey      string
-	StripePublishableKey string
-	StripeWebhookSecret  string
-	MidtransServerKey    string
-	MidtransClientKey    string
-	MidtransEnvironment  string // "sandbox" or "production"
-	
+	Provider               string
+	ManualQRISImageURL     string
+	ManualQRISInstructions string
+	StripeSecretKey        string
+	StripePublishableKey   string
+	StripeWebhookSecret    string
+	MidtransServerKey      string
+	MidtransClientKey      string
+	MidtransEnvironment    string // "sandbox" or "production"
+
 	// GoPay QRIS Configuration
-	GoPayMerchantID   string
-	GoPaySecretKey    string
-	GoPayBaseURL      string
-	GoPayCallbackURL  string
-	GoPayTerminalID   string
+	GoPayMerchantID  string
+	GoPaySecretKey   string
+	GoPayBaseURL     string
+	GoPayCallbackURL string
+	GoPayTerminalID  string
 }
 
 type EmailConfig struct {
+	Driver       string
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUser     string
@@ -81,6 +95,7 @@ type EmailConfig struct {
 }
 
 type RedisConfig struct {
+	Addr     string
 	Host     string
 	Port     string
 	Password string
@@ -119,26 +134,39 @@ func LoadConfig() *Config {
 			RefreshExpiration: time.Hour * 24 * 7,
 		},
 		Storage: StorageConfig{
-			Provider:       getEnv("STORAGE_PROVIDER", "local"),
-			LocalPath:      getEnv("UPLOAD_DIR", "./uploads"),
-			S3Bucket:       getEnv("S3_BUCKET", ""),
-			S3Region:       getEnv("S3_REGION", "us-east-1"),
-			S3AccessKey:    getEnv("S3_ACCESS_KEY", ""),
-			S3SecretKey:    getEnv("S3_SECRET_KEY", ""),
+			Provider:       getEnv("STORAGE_PROVIDER", getEnv("STORAGE_DRIVER", "local")),
+			Driver:         getEnv("STORAGE_DRIVER", getEnv("STORAGE_PROVIDER", "local")),
+			LocalPath:      getEnv("STORAGE_PATH", getEnv("UPLOAD_DIR", "./uploads")),
+			Bucket:         getEnv("STORAGE_BUCKET", getEnv("S3_BUCKET", "")),
+			Endpoint:       getEnv("STORAGE_ENDPOINT", ""),
+			Region:         getEnv("STORAGE_REGION", getEnv("S3_REGION", "us-east-1")),
+			AccessKey:      getEnv("STORAGE_ACCESS_KEY", getEnv("S3_ACCESS_KEY", "")),
+			SecretKey:      getEnv("STORAGE_SECRET_KEY", getEnv("S3_SECRET_KEY", "")),
+			PublicBaseURL:  getEnv("STORAGE_PUBLIC_BASE_URL", ""),
+			ForcePathStyle: getEnvAsBool("STORAGE_FORCE_PATH_STYLE", true),
+			S3Bucket:       getEnv("S3_BUCKET", getEnv("STORAGE_BUCKET", "")),
+			S3Region:       getEnv("S3_REGION", getEnv("STORAGE_REGION", "us-east-1")),
+			S3AccessKey:    getEnv("S3_ACCESS_KEY", getEnv("STORAGE_ACCESS_KEY", "")),
+			S3SecretKey:    getEnv("S3_SECRET_KEY", getEnv("STORAGE_SECRET_KEY", "")),
 			SupabaseURL:    getEnv("SUPABASE_URL", ""),
 			SupabaseKey:    getEnv("SUPABASE_KEY", ""),
 			SupabaseBucket: getEnv("SUPABASE_BUCKET", "photobooth"),
 			MaxUploadSize:  getEnvAsInt64("MAX_UPLOAD_SIZE", 10485760), // 10MB
-			AllowedFormats: []string{"image/jpeg", "image/png", "image/jpg", "image/webp"},
+			MaxImageWidth:  getEnvAsInt("MAX_IMAGE_WIDTH", 8000),
+			MaxImageHeight: getEnvAsInt("MAX_IMAGE_HEIGHT", 8000),
+			AllowedFormats: []string{"image/jpeg", "image/png", "image/webp"},
 		},
 		Payment: PaymentConfig{
-			StripeSecretKey:      getEnv("STRIPE_SECRET_KEY", ""),
-			StripePublishableKey: getEnv("STRIPE_PUBLISHABLE_KEY", ""),
-			StripeWebhookSecret:  getEnv("STRIPE_WEBHOOK_SECRET", ""),
-			MidtransServerKey:    getEnv("MIDTRANS_SERVER_KEY", ""),
-			MidtransClientKey:    getEnv("MIDTRANS_CLIENT_KEY", ""),
-			MidtransEnvironment:  getEnv("MIDTRANS_ENV", "sandbox"),
-			
+			Provider:               getEnv("PAYMENT_PROVIDER", "manual_qris"),
+			ManualQRISImageURL:     getEnv("MANUAL_QRIS_IMAGE_URL", ""),
+			ManualQRISInstructions: getEnv("MANUAL_QRIS_INSTRUCTIONS", "Scan QRIS, then wait for admin confirmation."),
+			StripeSecretKey:        getEnv("STRIPE_SECRET_KEY", ""),
+			StripePublishableKey:   getEnv("STRIPE_PUBLISHABLE_KEY", ""),
+			StripeWebhookSecret:    getEnv("STRIPE_WEBHOOK_SECRET", ""),
+			MidtransServerKey:      getEnv("MIDTRANS_SERVER_KEY", ""),
+			MidtransClientKey:      getEnv("MIDTRANS_CLIENT_KEY", ""),
+			MidtransEnvironment:    getEnv("MIDTRANS_ENV", "sandbox"),
+
 			// GoPay QRIS
 			GoPayMerchantID:  getEnv("GOPAY_MERCHANT_ID", ""),
 			GoPaySecretKey:   getEnv("GOPAY_SECRET_KEY", ""),
@@ -147,6 +175,7 @@ func LoadConfig() *Config {
 			GoPayTerminalID:  getEnv("GOPAY_TERMINAL_ID", "TERMINAL-001"),
 		},
 		Email: EmailConfig{
+			Driver:       getEnv("EMAIL_DRIVER", "disabled"),
 			SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
 			SMTPPort:     getEnvAsInt("SMTP_PORT", 587),
 			SMTPUser:     getEnv("SMTP_USER", ""),
@@ -155,6 +184,7 @@ func LoadConfig() *Config {
 			FromName:     getEnv("FROM_NAME", "Photo Booth"),
 		},
 		Redis: RedisConfig{
+			Addr:     getEnv("REDIS_ADDR", ""),
 			Host:     getEnv("REDIS_HOST", "localhost"),
 			Port:     getEnv("REDIS_PORT", "6379"),
 			Password: getEnv("REDIS_PASSWORD", ""),
@@ -192,4 +222,12 @@ func getEnvAsInt64(key string, defaultValue int64) int64 {
 		return value
 	}
 	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	valueStr := strings.ToLower(strings.TrimSpace(getEnv(key, "")))
+	if valueStr == "" {
+		return defaultValue
+	}
+	return valueStr == "1" || valueStr == "true" || valueStr == "yes"
 }

@@ -16,8 +16,12 @@ type RedisService struct {
 }
 
 func NewRedisService(cfg *config.Config) *RedisService {
+	addr := cfg.Redis.Addr
+	if addr == "" {
+		addr = fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
+	}
 	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+		Addr:     addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
@@ -36,6 +40,21 @@ func NewRedisService(cfg *config.Config) *RedisService {
 		client: client,
 		ctx:    ctx,
 	}
+}
+
+// Client exposes the underlying Redis client for infrastructure services such as queues.
+func (r *RedisService) Client() *redis.Client {
+	if r == nil {
+		return nil
+	}
+	return r.client
+}
+
+func (r *RedisService) Ping(ctx context.Context) error {
+	if r == nil || r.client == nil {
+		return fmt.Errorf("redis is not configured")
+	}
+	return r.client.Ping(ctx).Err()
 }
 
 // Set stores a value with expiration
@@ -244,7 +263,7 @@ func (c *CacheService) InvalidateUserCache(userID uint) error {
 // RateLimitCheck checks rate limit for user
 func (c *CacheService) RateLimitCheck(userID uint, limit int, window time.Duration) (bool, error) {
 	key := fmt.Sprintf("ratelimit:user:%d", userID)
-	
+
 	count, err := c.redis.Increment(key)
 	if err != nil {
 		return false, err

@@ -51,26 +51,27 @@ func AutoMigrate() error {
 		// Base models without dependencies
 		&models.User{},
 		&models.Template{},
-		
+
 		// Session (referenced by Photo)
 		&models.Session{},
-		
+
 		// Photo (depends on User, Template, Session)
 		&models.Photo{},
-		
+
 		// Order and payment models
 		&models.Order{},
 		&models.Transaction{},
 		&models.QRISPayment{},
-		
+
 		// Promo models
 		&models.PromoCode{},
 		&models.PromoUsage{},
-		
+
 		// Analytics
 		&models.Analytics{},
+		&models.AnalyticsEvent{},
 		&models.DailyStats{},
-		
+
 		// Audit and security
 		&models.AuditLog{},
 		&models.TwoFactorAuth{},

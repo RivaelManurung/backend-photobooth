@@ -39,7 +39,9 @@ func main() {
 	imageProcessor := services.NewImageProcessor(storageService)
 	goPayQRISService := services.NewGoPayQRISService(cfg)
 	templateProcessor := services.NewTemplateProcessor("./uploads/templates")
-	
+	redisService := services.NewRedisService(cfg)
+	queueService := services.NewQueueService(redisService)
+
 	// Initialize WebSocket Hub
 	wsHub := services.NewHub()
 	go wsHub.Run()
@@ -55,20 +57,24 @@ func main() {
 	sessionHandler := handlers.NewSessionHandler()
 	searchHandler := handlers.NewSearchHandler()
 	promoHandler := handlers.NewPromoHandler()
+	twoFAHandler := handlers.NewTwoFAHandler(cfg)
+	auditHandler := handlers.NewAuditHandler()
 	docsHandler := handlers.NewDocsHandler()
-	
+	wsHandler := handlers.NewWebSocketHandler(wsHub)
+	photoHandler.SetQueueService(queueService)
+
 	// Setup Router
-	router := routes.SetupRouter(cfg, 
-		authHandler, templateHandler, templateAdminHandler, 
-		photoHandler, paymentHandler, goPayHandler, 
-		adminHandler, sessionHandler, searchHandler, 
-		promoHandler, docsHandler, wsHub,
+	router := routes.SetupRouter(cfg,
+		authHandler, templateHandler, templateAdminHandler,
+		photoHandler, paymentHandler, goPayHandler,
+		adminHandler, sessionHandler, searchHandler,
+		promoHandler, twoFAHandler, auditHandler, docsHandler, wsHandler, wsHub,
 	)
 
 	// Configure HTTP Server
 	srv := &http.Server{
-		Addr:    ":" + cfg.Server.Port,
-		Handler: router,
+		Addr:         ":" + cfg.Server.Port,
+		Handler:      router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -98,7 +104,7 @@ func main() {
 	// the request it is currently handling
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal("Server forced to shutdown: ", err)
 	}
