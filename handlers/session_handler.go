@@ -4,6 +4,9 @@ import (
 	"backendphotobooth/database"
 	"backendphotobooth/middleware"
 	"backendphotobooth/models"
+	"backendphotobooth/services"
+	"backendphotobooth/utils"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,10 +14,12 @@ import (
 	"github.com/google/uuid"
 )
 
-type SessionHandler struct{}
+type SessionHandler struct {
+	sessionService *services.SessionService
+}
 
-func NewSessionHandler() *SessionHandler {
-	return &SessionHandler{}
+func NewSessionHandler(sessionService *services.SessionService) *SessionHandler {
+	return &SessionHandler{sessionService: sessionService}
 }
 
 // CreateSession creates a new photo booth session
@@ -40,15 +45,17 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		req.Duration = 24 // 24 hours default
 	}
 
-	// Create session
+	// Create session with random token
+	token, _ := utils.GenerateRandomToken(32)
 	session := models.Session{
 		SessionID:   uuid.New().String(),
+		Token:       token,
 		EventName:   req.EventName,
 		EventType:   req.EventType,
 		Location:    req.Location,
 		TemplateID:  req.TemplateID,
 		LayoutCount: req.LayoutCount,
-		Status:      "active",
+		Status:      models.StatusDraft,
 		ExpiresAt:   time.Now().Add(time.Hour * time.Duration(req.Duration)),
 	}
 
@@ -60,6 +67,10 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})
 		return
 	}
+
+	// Transition to CAPTURING immediately if ready
+	session.Status = models.StatusCapturing
+	database.DB.Save(&session)
 
 	// Load template
 	database.DB.Preload("Template").First(&session, session.ID)
@@ -73,6 +84,7 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 // GetSession returns session details
 func (h *SessionHandler) GetSession(c *gin.Context) {
 	sessionID := c.Param("session_id")
+	token := c.Query("token")
 
 	var session models.Session
 	if err := database.DB.Where("session_id = ?", sessionID).
@@ -83,9 +95,21 @@ func (h *SessionHandler) GetSession(c *gin.Context) {
 		return
 	}
 
+	// Enforce Ownership/Token
+	user, _ := middleware.GetCurrentUser(c)
+	if session.UserID != nil {
+		if user == nil || *session.UserID != user.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
+	} else if session.Token != token {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session token"})
+		return
+	}
+
 	// Check if expired
-	if session.IsExpired() {
-		session.Status = "expired"
+	if session.IsExpired() && session.Status != models.StatusExpired {
+		session.Status = models.StatusExpired
 		database.DB.Save(&session)
 	}
 
@@ -125,6 +149,13 @@ func (h *SessionHandler) UpdateSession(c *gin.Context) {
 		return
 	}
 
+	// Ownership check
+	user, _ := middleware.GetCurrentUser(c)
+	if session.UserID != nil && (user == nil || *session.UserID != user.ID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
 	var req struct {
 		EventName string `json:"event_name"`
 		Location  string `json:"location"`
@@ -136,15 +167,21 @@ func (h *SessionHandler) UpdateSession(c *gin.Context) {
 		return
 	}
 
-	// Update fields
+	// Handle State Transition
+	if req.Status != "" && req.Status != session.Status {
+		if !h.sessionService.CanTransition(session.Status, req.Status) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid status transition from %s to %s", session.Status, req.Status)})
+			return
+		}
+		session.Status = req.Status
+	}
+
+	// Update other fields
 	if req.EventName != "" {
 		session.EventName = req.EventName
 	}
 	if req.Location != "" {
 		session.Location = req.Location
-	}
-	if req.Status != "" {
-		session.Status = req.Status
 	}
 
 	database.DB.Save(&session)
@@ -165,7 +202,12 @@ func (h *SessionHandler) EndSession(c *gin.Context) {
 		return
 	}
 
-	session.Status = "completed"
+	if !h.sessionService.CanTransition(session.Status, models.StatusCompleted) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot complete session from current state"})
+		return
+	}
+
+	session.Status = models.StatusCompleted
 	database.DB.Save(&session)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -177,6 +219,25 @@ func (h *SessionHandler) EndSession(c *gin.Context) {
 // GetSessionPhotos returns all photos in a session
 func (h *SessionHandler) GetSessionPhotos(c *gin.Context) {
 	sessionID := c.Param("session_id")
+	token := c.Query("token")
+
+	var session models.Session
+	if err := database.DB.Where("session_id = ?", sessionID).First(&session).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+		return
+	}
+
+	// Token/Owner validation
+	user, _ := middleware.GetCurrentUser(c)
+	if session.UserID != nil {
+		if user == nil || *session.UserID != user.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
+	} else if session.Token != token {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
 
 	var photos []models.Photo
 	if err := database.DB.Where("session_id = ?", sessionID).
@@ -214,8 +275,8 @@ func (h *SessionHandler) ExtendSession(c *gin.Context) {
 
 	// Extend expiration
 	session.ExpiresAt = session.ExpiresAt.Add(time.Hour * time.Duration(req.Hours))
-	if session.Status == "expired" {
-		session.Status = "active"
+	if session.Status == models.StatusExpired {
+		session.Status = models.StatusCapturing
 	}
 
 	database.DB.Save(&session)
@@ -238,7 +299,7 @@ func (h *SessionHandler) DeleteSession(c *gin.Context) {
 
 	// Check ownership
 	user, _ := middleware.GetCurrentUser(c)
-	if user != nil && session.UserID != nil && *session.UserID != user.ID {
+	if session.UserID != nil && (user == nil || *session.UserID != user.ID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}

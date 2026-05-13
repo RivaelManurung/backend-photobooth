@@ -6,6 +6,17 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	StatusDraft          = "DRAFT"
+	StatusCapturing      = "CAPTURING"
+	StatusProcessing     = "PROCESSING"
+	StatusWaitingPayment = "WAITING_PAYMENT"
+	StatusPaid           = "PAID"
+	StatusCompleted      = "COMPLETED"
+	StatusExpired        = "EXPIRED"
+	StatusCancelled      = "CANCELLED"
+)
+
 // Session represents a photo booth session
 type Session struct {
 	ID          uint           `gorm:"primarykey" json:"id"`
@@ -15,6 +26,7 @@ type Session struct {
 	
 	// Session Info
 	SessionID   string         `gorm:"uniqueIndex;not null" json:"session_id"`
+	Token       string         `gorm:"uniqueIndex;not null" json:"token"` // Secure random token for public sessions
 	UserID      *uint          `gorm:"index" json:"user_id"` // Optional, can be guest
 	User        *User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	
@@ -29,7 +41,7 @@ type Session struct {
 	LayoutCount int            `json:"layout_count"`
 	
 	// Status
-	Status      string         `gorm:"default:'active'" json:"status"` // active, completed, expired
+	Status      string         `gorm:"default:'DRAFT'" json:"status"`
 	ExpiresAt   time.Time      `json:"expires_at"`
 	
 	// Stats
@@ -46,7 +58,7 @@ func (s *Session) IsExpired() bool {
 
 // CanAddPhotos checks if more photos can be added
 func (s *Session) CanAddPhotos(maxPhotos int) bool {
-	return !s.IsExpired() && s.Status == "active" && s.PhotoCount < maxPhotos
+	return !s.IsExpired() && s.Status == StatusCapturing && s.PhotoCount < maxPhotos
 }
 
 // IncrementPhotoCount increments photo count

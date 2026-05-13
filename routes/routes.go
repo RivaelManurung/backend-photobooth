@@ -57,6 +57,7 @@ func SetupRouter(cfg *config.Config,
 	// 3. Global Logging & Rate Limiting
 	router.Use(middleware.ZapLogger(utils.Logger))
 	router.Use(middleware.RateLimitMiddleware(200))
+	router.Use(middleware.AuditMiddleware())
 
 	// Serve static files
 	router.Static("/uploads", "./uploads")

@@ -29,7 +29,7 @@ func (h *PaymentHandler) CreateSubscriptionOrder(c *gin.Context) {
 	}
 
 	var req struct {
-		Plan          string `json:"plan" binding:"required"` // basic, premium
+		Plan          string `json:"plan" binding:"required"`           // basic, premium
 		BillingPeriod string `json:"billing_period" binding:"required"` // monthly, yearly
 		PaymentMethod string `json:"payment_method" binding:"required"` // stripe, midtrans
 	}
@@ -46,8 +46,8 @@ func (h *PaymentHandler) CreateSubscriptionOrder(c *gin.Context) {
 	order := models.Order{
 		UserID:           user.ID,
 		OrderNumber:      models.GenerateOrderNumber(),
-		Type:             "subscription",
-		Status:           "pending",
+		Type:             models.OrderTypeSubscription,
+		Status:           models.OrderStatusPending,
 		Amount:           pricing["amount"],
 		Currency:         "IDR",
 		Tax:              pricing["tax"],
@@ -84,6 +84,71 @@ func (h *PaymentHandler) CreateSubscriptionOrder(c *gin.Context) {
 	})
 }
 
+// CreatePhotoboothOrder creates an order for a premium photobooth session
+func (h *PaymentHandler) CreatePhotoboothOrder(c *gin.Context) {
+	user, _ := middleware.GetCurrentUser(c)
+
+	var req struct {
+		SessionID     string `json:"session_id" binding:"required"`
+		PaymentMethod string `json:"payment_method" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var session models.Session
+	if err := database.DB.Where("session_id = ?", req.SessionID).Preload("Template").First(&session).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+		return
+	}
+
+	if !session.Template.IsPremium {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This session is already free"})
+		return
+	}
+
+	// Fixed price for premium session
+	amount := 25000.0 // 25k IDR
+	tax := amount * 0.11
+	total := amount + tax
+
+	order := models.Order{
+		SessionID:     &session.SessionID,
+		OrderNumber:   models.GenerateOrderNumber(),
+		Type:          models.OrderTypePhotobooth,
+		Status:        models.OrderStatusPending,
+		Amount:        amount,
+		Currency:      "IDR",
+		Tax:           tax,
+		TotalAmount:   total,
+		PaymentMethod: req.PaymentMethod,
+	}
+
+	if user != nil {
+		order.UserID = user.ID
+	}
+
+	if err := database.DB.Create(&order).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create order"})
+		return
+	}
+
+	// Update session status to WAITING_PAYMENT
+	session.Status = models.StatusWaitingPayment
+	database.DB.Save(&session)
+
+	paymentURL := h.createPaymentURL(&order)
+	order.PaymentURL = paymentURL
+	database.DB.Save(&order)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"order":       order,
+		"payment_url": paymentURL,
+	})
+}
+
 // GetOrders returns user's orders
 func (h *PaymentHandler) GetOrders(c *gin.Context) {
 	user, err := middleware.GetCurrentUser(c)
@@ -105,20 +170,24 @@ func (h *PaymentHandler) GetOrders(c *gin.Context) {
 
 // GetOrder returns a single order
 func (h *PaymentHandler) GetOrder(c *gin.Context) {
-	user, err := middleware.GetCurrentUser(c)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
+	user, _ := middleware.GetCurrentUser(c)
 
 	id := c.Param("id")
 
 	var order models.Order
-	if err := database.DB.Where("id = ? AND user_id = ?", id, user.ID).
+	if err := database.DB.Where("id = ?", id).
 		Preload("Transactions").
 		First(&order).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
+	}
+
+	// Ownership check if user is logged in
+	if order.UserID > 0 {
+		if user == nil || order.UserID != user.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"order": order})
@@ -127,7 +196,7 @@ func (h *PaymentHandler) GetOrder(c *gin.Context) {
 // WebhookStripe handles Stripe webhooks
 func (h *PaymentHandler) WebhookStripe(c *gin.Context) {
 	// TODO: Implement Stripe webhook verification and processing
-	
+
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -152,7 +221,7 @@ func (h *PaymentHandler) WebhookStripe(c *gin.Context) {
 // WebhookMidtrans handles Midtrans webhooks
 func (h *PaymentHandler) WebhookMidtrans(c *gin.Context) {
 	// TODO: Implement Midtrans webhook verification and processing
-	
+
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -165,6 +234,12 @@ func (h *PaymentHandler) WebhookMidtrans(c *gin.Context) {
 	var order models.Order
 	if err := database.DB.Where("order_number = ?", orderID).First(&order).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		return
+	}
+
+	// Idempotency: Check if already processed
+	if order.Status == models.OrderStatusPaid {
+		c.JSON(http.StatusOK, gin.H{"received": true, "message": "already processed"})
 		return
 	}
 
@@ -256,6 +331,13 @@ func (h *PaymentHandler) processSuccessfulOrder(order *models.Order) {
 			user.SubscriptionEnd = order.EndDate
 			database.DB.Save(&user)
 		}
+	}
+
+	// Update session status if it's a photobooth order
+	if order.SessionID != nil {
+		database.DB.Model(&models.Session{}).
+			Where("session_id = ?", *order.SessionID).
+			Update("status", models.StatusPaid)
 	}
 
 	// TODO: Send confirmation email

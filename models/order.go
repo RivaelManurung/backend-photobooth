@@ -8,11 +8,28 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	OrderStatusPending   = "PENDING"
+	OrderStatusPaid      = "PAID"
+	OrderStatusFailed    = "FAILED"
+	OrderStatusExpired   = "EXPIRED"
+	OrderStatusCancelled = "CANCELLED"
+	OrderStatusRefunded  = "REFUNDED"
+)
+
+const (
+	OrderTypeSubscription = "subscription"
+	OrderTypePhotobooth   = "photobooth"
+)
+
 type Order struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+	// Session Link
+	SessionID *string `gorm:"index" json:"session_id,omitempty"` // Optional link to a photobooth session
 
 	// User
 	UserID uint `gorm:"not null;index" json:"user_id"`
@@ -20,8 +37,8 @@ type Order struct {
 
 	// Order Details
 	OrderNumber string `gorm:"uniqueIndex;not null" json:"order_number"`
-	Type        string `gorm:"not null" json:"type"`            // subscription, credits, print
-	Status      string `gorm:"default:'pending'" json:"status"` // pending, paid, failed, refunded, cancelled
+	Type        string `gorm:"not null" json:"type"`            // subscription, credits, print, photobooth_session
+	Status      string `gorm:"default:'PENDING'" json:"status"` // PENDING, PAID, FAILED, REFUNDED, CANCELLED, EXPIRED
 
 	// Pricing
 	Amount      float64 `gorm:"not null" json:"amount"`
@@ -99,14 +116,14 @@ func GenerateOrderNumber() string {
 // MarkAsPaid marks the order as paid
 func (o *Order) MarkAsPaid(db *gorm.DB) error {
 	now := time.Now()
-	o.Status = "paid"
+	o.Status = OrderStatusPaid
 	o.PaidAt = &now
 	return db.Save(o).Error
 }
 
 // MarkAsFailed marks the order as failed
 func (o *Order) MarkAsFailed(db *gorm.DB, reason string) error {
-	o.Status = "failed"
+	o.Status = OrderStatusFailed
 	o.Notes = reason
 	return db.Save(o).Error
 }
@@ -128,5 +145,5 @@ func (o *Order) IsSubscriptionOrder() bool {
 
 // IsPaid checks if order is paid
 func (o *Order) IsPaid() bool {
-	return o.Status == "paid"
+	return o.Status == OrderStatusPaid
 }

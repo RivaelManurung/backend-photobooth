@@ -5,6 +5,7 @@ import (
 	"backendphotobooth/middleware"
 	"backendphotobooth/models"
 	"backendphotobooth/services"
+	"backendphotobooth/utils"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -18,12 +19,14 @@ type PhotoHandler struct {
 	storageService *services.StorageService
 	imageProcessor *services.ImageProcessor
 	queueService   *services.QueueService
+	sessionService *services.SessionService
 }
 
-func NewPhotoHandler(storage *services.StorageService, processor *services.ImageProcessor) *PhotoHandler {
+func NewPhotoHandler(storage *services.StorageService, processor *services.ImageProcessor, sessionService *services.SessionService) *PhotoHandler {
 	return &PhotoHandler{
 		storageService: storage,
 		imageProcessor: processor,
+		sessionService: sessionService,
 	}
 }
 
@@ -33,11 +36,7 @@ func (h *PhotoHandler) SetQueueService(queue *services.QueueService) {
 
 // UploadPhoto handles photo upload
 func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
-	user, err := middleware.GetCurrentUser(c)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
+	user, _ := middleware.GetCurrentUser(c)
 
 	// Get form data
 	file, err := c.FormFile("photo")
@@ -46,21 +45,60 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		return
 	}
 
+	sessionID := c.PostForm("session_id")
+	sessionToken := c.PostForm("session_token")
 	templateID := c.PostForm("template_id")
 	filter := c.PostForm("filter")
-	sessionID := c.PostForm("session_id")
 	customDataStr := c.PostForm("custom_data")
 
-	// Upload file
+	// 1. Fetch and Validate Session
+	var session models.Session
+	if sessionID != "" {
+		if err := database.DB.Where("session_id = ?", sessionID).First(&session).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+			return
+		}
+
+		// Ownership/Token Validation
+		if session.UserID != nil {
+			if user == nil || *session.UserID != user.ID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Access denied to session"})
+				return
+			}
+		} else if session.Token != sessionToken {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session token"})
+			return
+		}
+
+		// State Validation
+		if err := h.sessionService.ValidateStateAction(&session, "upload"); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	} else if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: session_id or login required"})
+		return
+	}
+
+	// 2. Validate Image Content
+	config := utils.ValidationConfig{
+		MaxFileSize: 10 * 1024 * 1024, // 10MB default
+		AllowedMimeTypes: []string{"image/jpeg", "image/png", "image/webp"},
+	}
+	if err := utils.ValidateImageUpload(file, config); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid image: " + err.Error()})
+		return
+	}
+
+	// 3. Upload file
 	url, err := h.storageService.UploadFile(file, "photos")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload failed: " + err.Error()})
 		return
 	}
 
 	// Create photo record
 	photo := models.Photo{
-		UserID:            &user.ID,
 		OriginalURL:       url,
 		FileName:          file.Filename,
 		FileSize:          file.Size,
@@ -72,13 +110,22 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		SessionID:         sessionID,
 		StorageProvider:   "local",
 		StoragePath:       url,
-		HasWatermark:      user.SubscriptionPlan == "free",
+	}
+
+	if user != nil {
+		photo.UserID = &user.ID
+		photo.HasWatermark = user.SubscriptionPlan == "free"
+	} else {
+		photo.HasWatermark = true // Anonymous always has watermark
+		photo.IsAnonymous = true
 	}
 
 	// Parse template ID
 	if templateID != "" {
 		tid, _ := strconv.ParseUint(templateID, 10, 32)
 		photo.TemplateID = uint(tid)
+	} else if session.TemplateID > 0 {
+		photo.TemplateID = session.TemplateID
 	}
 
 	// Parse custom data
@@ -91,6 +138,11 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		return
 	}
 
+	// Update session photo count
+	if session.ID > 0 {
+		session.IncrementPhotoCount(database.DB)
+	}
+
 	if h.queueService != nil {
 		if err := h.queueService.EnqueuePhotoProcess(c.Request.Context(), photo.ID); err != nil {
 			photo.ProcessingStatus = "failed"
@@ -99,7 +151,6 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 			database.DB.Save(&photo)
 		}
 	} else {
-		// Local fallback keeps the existing single-process behavior when Redis is unavailable.
 		go func() {
 			var template models.Template
 			if photo.TemplateID > 0 {
@@ -118,11 +169,6 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 			database.DB.Save(&photo)
 		}()
 	}
-
-	// Convert URLs to presigned URLs for response
-	photo.OriginalURL = h.storageService.GetFileURL(photo.OriginalURL)
-	photo.ProcessedURL = h.storageService.GetFileURL(photo.ProcessedURL)
-	photo.ThumbnailURL = h.storageService.GetFileURL(photo.ThumbnailURL)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"photo":   photo,
@@ -404,13 +450,13 @@ func (h *PhotoHandler) CreatePhotoStrip(c *gin.Context) {
 }
 
 // UploadPublicStrip accepts a base64-encoded PNG strip from the user (no auth required)
-// POST /api/v1/photos/strip-public
 func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 	var req struct {
-		ImageBase64 string `json:"image_base64" binding:"required"`
-		TemplateID  uint   `json:"template_id"`
-		Filter      string `json:"filter"`
-		SessionID   string `json:"session_id"`
+		ImageBase64  string `json:"image_base64" binding:"required"`
+		TemplateID   uint   `json:"template_id"`
+		Filter       string `json:"filter"`
+		SessionID    string `json:"session_id"`
+		SessionToken string `json:"session_token"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -418,7 +464,27 @@ func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 		return
 	}
 
-	// Strip data URI prefix
+	// 1. Session Validation if SessionID is provided
+	var session models.Session
+	if req.SessionID != "" {
+		if err := database.DB.Where("session_id = ?", req.SessionID).First(&session).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+			return
+		}
+
+		if session.UserID != nil {
+			user, _ := middleware.GetCurrentUser(c)
+			if user == nil || *session.UserID != user.ID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Access denied to session"})
+				return
+			}
+		} else if session.Token != req.SessionToken {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session token"})
+			return
+		}
+	}
+
+	// 2. Decode and Upload
 	raw := req.ImageBase64
 	contentType := "image/png"
 	if idx := strings.Index(raw, ";base64,"); idx != -1 {
@@ -434,17 +500,14 @@ func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 		return
 	}
 
-	// Upload to storage
 	storagePath, err := h.storageService.UploadFromBytes(imgBytes, "strips", contentType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload failed: " + err.Error()})
 		return
 	}
 
-	// Get public URL (no expiry)
 	publicURL := h.storageService.GetPublicURL(storagePath)
 
-	// Save record to database (UserID = nil = anonymous)
 	photo := models.Photo{
 		OriginalURL:     publicURL,
 		ProcessedURL:    publicURL,
@@ -460,9 +523,8 @@ func (h *PhotoHandler) UploadPublicStrip(c *gin.Context) {
 		Status:          "completed",
 		Title:           "Photobooth Strip",
 	}
-	db := database.GetDB()
-	if err := db.Create(&photo).Error; err != nil {
-		// Non-fatal: log and continue — file is already on Supabase
+
+	if err := database.DB.Create(&photo).Error; err != nil {
 		c.JSON(http.StatusCreated, gin.H{
 			"url":     publicURL,
 			"path":    storagePath,

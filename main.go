@@ -41,6 +41,7 @@ func main() {
 	templateProcessor := services.NewTemplateProcessor("./uploads/templates")
 	redisService := services.NewRedisService(cfg)
 	queueService := services.NewQueueService(redisService)
+	sessionService := services.NewSessionService()
 
 	// Initialize WebSocket Hub
 	wsHub := services.NewHub()
@@ -50,11 +51,11 @@ func main() {
 	authHandler := handlers.NewAuthHandler(cfg)
 	templateHandler := handlers.NewTemplateHandler(storageService)
 	templateAdminHandler := handlers.NewTemplateAdminHandler(storageService, templateProcessor)
-	photoHandler := handlers.NewPhotoHandler(storageService, imageProcessor)
+	photoHandler := handlers.NewPhotoHandler(storageService, imageProcessor, sessionService)
 	paymentHandler := handlers.NewPaymentHandler(cfg)
 	goPayHandler := handlers.NewGoPayHandler(cfg, goPayQRISService, wsHub)
 	adminHandler := handlers.NewAdminHandler()
-	sessionHandler := handlers.NewSessionHandler()
+	sessionHandler := handlers.NewSessionHandler(sessionService)
 	searchHandler := handlers.NewSearchHandler()
 	promoHandler := handlers.NewPromoHandler()
 	twoFAHandler := handlers.NewTwoFAHandler(cfg)
