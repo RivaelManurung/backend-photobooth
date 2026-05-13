@@ -113,9 +113,23 @@ func LoadConfig() *Config {
 			Port:        getEnv("PORT", "8080"),
 			Environment: getEnv("GIN_MODE", "debug"),
 			AllowOrigins: func() []string {
-				origins := strings.Split(getEnv("FRONTEND_URL", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"), ",")
-				for i := range origins {
-					origins[i] = strings.TrimSpace(origins[i])
+				// Default allowed origins
+				origins := []string{
+					"http://localhost:3000",
+					"http://localhost:5173",
+					"http://127.0.0.1:3000",
+					"http://127.0.0.1:5173",
+				}
+
+				// Add origins from environment
+				envOrigins := getEnv("FRONTEND_URL", "")
+				if envOrigins != "" {
+					for _, o := range strings.Split(envOrigins, ",") {
+						trimmed := strings.TrimSpace(o)
+						if trimmed != "" {
+							origins = append(origins, trimmed)
+						}
+					}
 				}
 				return origins
 			}(),
